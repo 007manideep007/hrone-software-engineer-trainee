@@ -1665,6 +1665,67 @@ def attendance_overview(
     return {"date": date, **results[0]}
 
 
+@app.get("/analytics/attendance/today")
+def today_attendance():
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    pipeline = [
+        {"$match": {"date": today}},
+        {
+            "$group": {
+                "_id": None,
+                "total_records": {"$sum": 1},
+                "present": {
+                    "$sum": {
+                        "$cond": [
+                            {
+                                "$in": [
+                                    "$status",
+                                    ["PRESENT", "WFH", "ON_DUTY"],
+                                ]
+                            },
+                            1,
+                            0,
+                        ]
+                    }
+                },
+                "absent": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": ["$status", "ABSENT"]},
+                            1,
+                            0,
+                        ]
+                    }
+                },
+                "late": {
+                    "$sum": {
+                        "$cond": [
+                            {"$gt": ["$late_minutes", 0]},
+                            1,
+                            0,
+                        ]
+                    }
+                },
+            }
+        },
+        {"$project": {"_id": 0}},
+    ]
+
+    results = list(db.attendance_logs.aggregate(pipeline))
+
+    if not results:
+        return {
+            "date": today,
+            "total_records": 0,
+            "present": 0,
+            "absent": 0,
+            "late": 0,
+        }
+
+    return {"date": today, **results[0]}
+
+
 # --------------------------------------------------------------------------- #
 # TODO - the rest of the contract (see openapi.yaml):
 #   POST  /attendance/punch-out
