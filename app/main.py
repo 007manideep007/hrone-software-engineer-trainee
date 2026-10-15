@@ -1726,6 +1726,100 @@ def today_attendance():
     return {"date": today, **results[0]}
 
 
+@app.get("/employees/{emp_code}/attendance-stats")
+def employee_attendance_stats(
+    emp_code: str,
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+):
+    try:
+        start = datetime.strptime(month, "%Y-%m").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail="Month must use YYYY-MM format",
+        )
+
+    if start.strftime("%Y-%m") != month:
+        raise HTTPException(status_code=422, detail="Invalid month")
+
+    employee = db.employees.find_one(
+        {"emp_code": emp_code},
+        {"_id": 0, "emp_code": 1, "name": 1, "department": 1},
+    )
+
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    start_date = start.strftime("%Y-%m-01")
+    if start.month == 12:
+        next_month = start.replace(year=start.year + 1, month=1)
+    else:
+        next_month = start.replace(month=start.month + 1)
+    end_date = next_month.strftime("%Y-%m-%d")
+
+    pipeline = [
+        {
+            "$match": {
+                "emp_code": emp_code,
+                "date": {"$gte": start_date, "$lt": end_date},
+            }
+        },
+        {
+            "$group": {
+                "_id": None,
+                "total_records": {"$sum": 1},
+                "present_days": {
+                    "$sum": {
+                        "$cond": [
+                            {"$in": ["$status", ["PRESENT", "WFH", "ON_DUTY"]]},
+                            {"$cond": [{"$eq": ["$half_day", True]}, 0.5, 1]},
+                            0,
+                        ]
+                    }
+                },
+                "absent_days": {
+                    "$sum": {
+                        "$cond": [{"$eq": ["$status", "ABSENT"]}, 1, 0]
+                    }
+                },
+                "leave_days": {
+                    "$sum": {
+                        "$cond": [{"$eq": ["$status", "LEAVE"]}, 1, 0]
+                    }
+                },
+                "late_arrivals": {
+                    "$sum": {
+                        "$cond": [{"$gt": ["$late_minutes", 0]}, 1, 0]
+                    }
+                },
+                "total_late_minutes": {"$sum": "$late_minutes"},
+                "total_work_hours": {"$sum": "$work_hours"},
+            }
+        },
+        {"$project": {"_id": 0}},
+    ]
+
+    results = list(db.attendance_logs.aggregate(pipeline))
+
+    stats = results[0] if results else {
+        "total_records": 0,
+        "present_days": 0,
+        "absent_days": 0,
+        "leave_days": 0,
+        "late_arrivals": 0,
+        "total_late_minutes": 0,
+        "total_work_hours": 0,
+    }
+
+    stats["total_work_hours"] = round(stats["total_work_hours"], 2)
+
+    return {
+        "employee": employee,
+        "month": month,
+        "stats": stats,
+    }
+
+
 # --------------------------------------------------------------------------- #
 # TODO - the rest of the contract (see openapi.yaml):
 #   POST  /attendance/punch-out
