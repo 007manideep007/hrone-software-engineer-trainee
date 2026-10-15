@@ -1846,6 +1846,59 @@ def employees_by_department(
     }
 
 
+@app.get("/attendance/date/{date}")
+def attendance_by_date(
+    date: str,
+    status: Optional[str] = None,
+    limit: int = Query(20, ge=1, le=100),
+    skip: int = Query(0, ge=0),
+):
+    try:
+        parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail="Date must use YYYY-MM-DD format",
+        )
+
+    if parsed_date.isoformat() != date:
+        raise HTTPException(status_code=422, detail="Invalid date")
+
+    query = {"date": date}
+
+    if status is not None:
+        allowed_statuses = {
+            "PRESENT", "WFH", "ON_DUTY", "ABSENT", "LEAVE"
+        }
+        status = status.upper()
+
+        if status not in allowed_statuses:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid attendance status",
+            )
+
+        query["status"] = status
+
+    total = db.attendance_logs.count_documents(query)
+
+    records = list(
+        db.attendance_logs.find(query, {"_id": 0})
+        .sort("emp_code", 1)
+        .skip(skip)
+        .limit(limit)
+    )
+
+    return {
+        "date": date,
+        "status": status,
+        "total": total,
+        "limit": limit,
+        "skip": skip,
+        "items": records,
+    }
+
+
 # --------------------------------------------------------------------------- #
 # TODO - the rest of the contract (see openapi.yaml):
 #   POST  /attendance/punch-out
