@@ -1820,6 +1820,32 @@ def employee_attendance_stats(
     }
 
 
+@app.get("/employees/by-department/{department}")
+def employees_by_department(
+    department: str,
+    limit: int = Query(20, ge=1, le=100),
+    skip: int = Query(0, ge=0),
+):
+    query = {"department": department}
+
+    total = db.employees.count_documents(query)
+
+    employees = list(
+        db.employees.find(query, {"_id": 0})
+        .sort("emp_code", 1)
+        .skip(skip)
+        .limit(limit)
+    )
+
+    return {
+        "department": department,
+        "total": total,
+        "limit": limit,
+        "skip": skip,
+        "items": employees,
+    }
+
+
 # --------------------------------------------------------------------------- #
 # TODO - the rest of the contract (see openapi.yaml):
 #   POST  /attendance/punch-out
