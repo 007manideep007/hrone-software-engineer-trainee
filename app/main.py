@@ -1899,6 +1899,35 @@ def attendance_by_date(
     }
 
 
+@app.get("/analytics/employees/summary")
+def employee_summary():
+    pipeline = [
+        {
+            "$group": {
+                "_id": "$department",
+                "employee_count": {"$sum": 1},
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "department": "$_id",
+                "employee_count": 1,
+            }
+        },
+        {"$sort": {"department": 1}},
+    ]
+
+    departments = list(db.employees.aggregate(pipeline))
+    total = db.employees.count_documents({})
+
+    return {
+        "total_employees": total,
+        "department_count": len(departments),
+        "departments": departments,
+    }
+
+
 # --------------------------------------------------------------------------- #
 # TODO - the rest of the contract (see openapi.yaml):
 #   POST  /attendance/punch-out
